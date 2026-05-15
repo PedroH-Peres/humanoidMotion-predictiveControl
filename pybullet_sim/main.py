@@ -54,7 +54,7 @@ def main():
     dt_sim = 1/240.
     passos_fisica_por_mpc = int(dt_mpc / dt_sim) 
     
-    cmd_vx = 0.06
+    cmd_vx = 0.1
 
     print("Iniciando Caminhada Controlada por MPC!")
     while True:

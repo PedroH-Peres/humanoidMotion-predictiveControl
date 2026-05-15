@@ -3,7 +3,7 @@ import numpy as np
 import cvxpy as cp
 
 class TrajectoryGenerator:
-    def __init__(self, h_target=0.22, t_step=0.4, ds_ratio=0.12, y_sep=0.088, dt_mpc=0.02, n_horizon=25):
+    def __init__(self, h_target=0.22, t_step=0.3, ds_ratio=0.1, y_sep=0.085, dt_mpc=0.02, n_horizon=25):
         self.H_TARGET = h_target
         self.T_STEP = t_step
         self.T_DS = t_step * ds_ratio       
@@ -15,8 +15,8 @@ class TrajectoryGenerator:
         self.g = 9.81
         self.omega = math.sqrt(self.g / self.H_TARGET)
         
-        self.FOOT_MARGIN_X = 0.08
-        self.FOOT_MARGIN_Y = 0.04
+        self.FOOT_MARGIN_X = 0.07
+        self.FOOT_MARGIN_Y = 0.03
         
         self._setup_mpc_problem()
 

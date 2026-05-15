@@ -6,10 +6,10 @@ class RelativeAnalyticalIK:
         self.robot_id = robot_id
         
         # --- PARÂMETROS DO ROBÔ ---
-        self.L_COXA = 0.12  
-        self.L_TIBIA = 0.085  
+        self.L_COXA = 0.12 
+        self.L_TIBIA = 0.085 
         self.D_QUADRIL_OFFSET = 0.0425
-        self.D_TORNOZELO_SOLA = 0.048
+        self.D_TORNOZELO_SOLA = 0.055
         
         # IDs das juntas
         self.JUNTAS_DIR = [8, 9, 10, 11, 12, 13]
@@ -47,14 +47,14 @@ class RelativeAnalyticalIK:
 
     def apply(self, angulos_dir, angulos_esq):
         for i, angle in enumerate(angulos_dir):
-            p.setJointMotorControl2(self.robot_id, self.JUNTAS_DIR[i], p.POSITION_CONTROL, targetPosition=angle, force=6000, positionGain=1.0)
+            p.setJointMotorControl2(self.robot_id, self.JUNTAS_DIR[i], p.POSITION_CONTROL, targetPosition=angle, force=100, positionGain=1.0)
         for i, angle in enumerate(angulos_esq):
-            p.setJointMotorControl2(self.robot_id, self.JUNTAS_ESQ[i], p.POSITION_CONTROL, targetPosition=angle, force=6000, positionGain=1.0)
+            p.setJointMotorControl2(self.robot_id, self.JUNTAS_ESQ[i], p.POSITION_CONTROL, targetPosition=angle, force=100, positionGain=1.0)
         
         for j in range(p.getNumJoints(self.robot_id)):
             if j not in self.JUNTAS_DIR and j not in self.JUNTAS_ESQ:
                 target = self.fixed_joints.get(j, 0.0) 
-                p.setJointMotorControl2(self.robot_id, j, p.POSITION_CONTROL, targetPosition=target, force=6000, positionGain=1.0)
+                p.setJointMotorControl2(self.robot_id, j, p.POSITION_CONTROL, targetPosition=target, force=100, positionGain=1.0)
 
 class NumericalIK:
 
