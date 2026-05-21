@@ -124,7 +124,7 @@ def main():
     p.setGravity(0, 0, -9.81)
     p.loadURDF("plane.urdf")
     
-    robotId = p.loadURDF("urdf/aurea_urdf_pkg.urdf", [0, 0, 0.45], useFixedBase=False)
+    robotId = p.loadURDF("urdf/aurea_urdf_pkg.urdf", [0, 0, 0.45], useFixedBase=True)
 
     ik = RelativeAnalyticalIK(robotId)
     brain = WalkingMath(h_target=0.2)

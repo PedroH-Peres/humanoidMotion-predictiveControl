@@ -9,7 +9,7 @@ class RelativeAnalyticalIK:
         self.L_COXA = 0.12 
         self.L_TIBIA = 0.085 
         self.D_QUADRIL_OFFSET = 0.0425
-        self.D_TORNOZELO_SOLA = 0.055
+        self.D_TORNOZELO_SOLA = 0.045
         
         # IDs das juntas
         self.JUNTAS_DIR = [8, 9, 10, 11, 12, 13]
