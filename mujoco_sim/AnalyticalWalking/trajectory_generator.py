@@ -1,5 +1,7 @@
 """
 Trajectory generator for analytical bipedal walking.
+Port of trajectory_generator.cpp (aurea_walk ROS2 package).
+
 All poses are dicts: {'position': np.ndarray(2,), 'yaw': float, 'is_left': bool (optional)}
 """
 
@@ -35,9 +37,6 @@ def get_com_pose_at_time(
     """
     Compute COM (x, y) position and yaw at time t within a step of period T.
     Uses LIPM dynamics for lateral/forward motion, cosine blend for yaw.
-
-    Returns:
-        (com_pos_2d, com_yaw)
     """
     tb = (T * ds_ratio) / 2.0
     te = T - tb
@@ -88,12 +87,9 @@ def get_swing_foot_pose_at_time(
     p_start: dict,
     p_end: dict,
 ) -> tuple[np.ndarray, float]:
-    """
-    Compute swing foot position (x, y, z) and yaw in world frame at time t.
 
-    Returns:
-        (swing_pos_3d, swing_yaw)
-    """
+    # Compute swing foot position (x, y, z) and yaw in world frame at time t.
+
     tb = (T * ds_ratio) / 2.0
     te = T - tb
     phi = t / T
@@ -108,7 +104,7 @@ def get_swing_foot_pose_at_time(
 
     landing_phase_start = phi_e * 0.85
     if phi > landing_phase_start:
-        phase_phi = min((phi - landing_phase_start) / (phi_e - landing_phase_start), 1.0)
+        phase_phi = (phi - landing_phase_start) / (phi_e - landing_phase_start)
         # Height at start of landing phase (faithful port of C++ code)
         z_land_start = z_step * _v_phi(landing_phase_start * T, phi_b, phi_e)
         z = (1.0 - phase_phi) * z_land_start
@@ -125,13 +121,9 @@ def select_next_poses(
     T: float,
     y_sep: float,
 ) -> tuple[dict, dict]:
-    """
-    Plan the next torso and swing-foot target poses given a velocity command.
 
-    v_cmd keys: 'vx', 'vy', 'wz'
-    Returns:
-        (next_torso, next_swing) as pose dicts
-    """
+    #Plan the next torso and swing-foot target poses given a velocity command.
+
     dx = v_cmd.get("vx", 0.0) * T
     dy = v_cmd.get("vy", 0.0) * T
     d_yaw = v_cmd.get("wz", 0.0) * T

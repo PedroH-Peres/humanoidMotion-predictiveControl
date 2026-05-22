@@ -52,7 +52,7 @@ class IKSolver:
         Solve IK for one leg.
 
         Args:
-            p_body:        (3,) body (pelvis) position in world frame.
+            p_body:        (3,) body torso position in world frame.
             R_body:        (3,3) body rotation matrix in world frame.
             p_foot_target: (3,) foot **sole** target position in world frame.
             R_foot_target: (3,3) foot target orientation in world frame.

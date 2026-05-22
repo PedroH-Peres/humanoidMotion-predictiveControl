@@ -1,6 +1,5 @@
 """
 Analytical walking state machine for bipedal robots.
-Port of walking_engine_node.cpp (aurea_walk ROS2 package), decoupled from ROS2.
 
 Usage:
     engine = WalkingEngine()
@@ -55,7 +54,7 @@ class WalkingEngine:
         # Torso state (world frame)
         self.torso = {"position": np.array([0.0, 0.0]), "yaw": 0.0}
 
-        # Step plan 
+        # Step plan (set by start_new_step)
         self.torso_start  = None
         self.torso_target = None
         self.swing_start  = None
@@ -63,7 +62,6 @@ class WalkingEngine:
 
         # Velocity command
         self._cmd = {"vx": 0.0, "vy": 0.0, "wz": 0.0}
-
 
     def set_command(self, vx: float = 0.0, vy: float = 0.0, wz: float = 0.0) -> None:
         self._cmd = {"vx": vx, "vy": vy, "wz": wz}
@@ -78,7 +76,7 @@ class WalkingEngine:
 
         Returns:
             (body_pos, body_yaw, left_sole, left_yaw, right_sole, right_yaw)
-            body_pos   – np.ndarray(3,): desired torso world position [x, y, z_com]
+            body_pos   – np.ndarray(3,): desired pelvis world position [x, y, z_com]
             body_yaw   – float: desired pelvis yaw
             left_sole  – np.ndarray(3,): desired left foot sole world position
             left_yaw   – float: desired left foot yaw

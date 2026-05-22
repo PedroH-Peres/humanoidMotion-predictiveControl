@@ -14,7 +14,11 @@ os.chdir(os.path.join(os.path.dirname(__file__), ".."))
 
 from mujoco_sim.Utils.ik_solver import IKSolver
 from mujoco_sim.AnalyticalWalking.walking_engine import WalkingEngine
-from mujoco_sim.AnalyticalWalking.config import JOINT_SIGNS, WALK_PARAMS, ARM_POSE, PHYSICS, joint_name as _joint_name
+from mujoco_sim.AnalyticalWalking.config import (
+    JOINT_SIGNS, WALK_PARAMS, ARM_POSE, PHYSICS,
+    ACTUATOR_KP, ACTUATOR_KV, ACTUATOR_FORCE_RANGE,
+    joint_name as _joint_name,
+)
 
 _IK_KEYS = ["hip_yaw", "hip_roll", "hip_pitch", "knee", "ank_pitch", "ank_roll"]
 
@@ -24,23 +28,22 @@ def _rot_z(yaw: float) -> np.ndarray:
 
 
 def _yaw_to_quat(yaw: float) -> np.ndarray:
-    """[w, x, y, z] para rotação pura em Z."""
     return np.array([np.cos(yaw / 2.0), 0.0, 0.0, np.sin(yaw / 2.0)])
 
 def build_model() -> mujoco.MjModel:
     from robot_descriptions import op3_mj_description
 
     spec = mujoco.MjSpec.from_file(op3_mj_description.MJCF_PATH)
-    spec.option.timestep         = 0.006
+    spec.option.timestep         = 0.008
     spec.option.gravity          = [0.0, 0.0, -9.81]
     spec.option.integrator       = mujoco.mjtIntegrator.mjINT_IMPLICIT
     spec.option.solver            = mujoco.mjtSolver.mjSOL_NEWTON
     spec.option.impratio          = 50.0
-    spec.option.iterations        = 50
+    spec.option.iterations        = 40
     spec.option.noslip_iterations = 10
-    spec.option.tolerance         = 1e-5
+    spec.option.tolerance         = 1e-4
 
-    _SOLREF = [0.012, 2.0]
+    _SOLREF = [0.010, 2.0]
     _SOLIMP = [0.99, 0.9999, 0.0001, 0.5, 3]
 
     floor = spec.worldbody.add_geom()
@@ -68,24 +71,32 @@ def build_model() -> mujoco.MjModel:
     model.dof_damping[dof_start:dof_start+3]   = 3.0
     model.dof_damping[dof_start+3:dof_start+6] = 1.0
 
+    model.actuator_gainprm[:, 0]  =  ACTUATOR_KP
+    model.actuator_biasprm[:, 1]  = -ACTUATOR_KP
+    model.actuator_biasprm[:, 2]  = -ACTUATOR_KV
+    model.actuator_forcerange[:, 0] = -ACTUATOR_FORCE_RANGE
+    model.actuator_forcerange[:, 1] =  ACTUATOR_FORCE_RANGE
+
     return model
 
 
 
-def _build_maps(model: mujoco.MjModel) -> tuple[dict, dict]:
-    """
-    Retorna (qpos_addr, dof_addr): joint_name → índice em qpos/qvel.
-    Funciona para qualquer MJCF sem depender de nomes de atuadores.
-    """
+def _build_maps(model: mujoco.MjModel) -> tuple[dict, dict, dict]:
     qpos_addr: dict[str, int] = {}
     dof_addr:  dict[str, int] = {}
+    ctrl_addr: dict[str, int] = {}
     for i in range(model.njnt):
         name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, i)
         if name:
             qpos_addr[name] = model.jnt_qposadr[i]
             dof_addr[name]  = model.jnt_dofadr[i]
-    return qpos_addr, dof_addr
-
+    for i in range(model.nu):
+        if model.actuator_trntype[i] == mujoco.mjtTrn.mjTRN_JOINT:
+            jnt_id = model.actuator_trnid[i, 0]
+            name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, jnt_id)
+            if name:
+                ctrl_addr[name] = i
+    return qpos_addr, dof_addr, ctrl_addr
 
 def _set_free_joint(data: mujoco.MjData, model: mujoco.MjModel,
                     pos: np.ndarray, quat: np.ndarray) -> None:
@@ -94,11 +105,18 @@ def _set_free_joint(data: mujoco.MjData, model: mujoco.MjModel,
     data.qpos[adr+3:adr+7] = quat
 
 
+def _apply_ctrl(data: mujoco.MjData,
+                ctrl_addr: dict,
+                joint_angles: dict[str, float]) -> None:
+    for jname, angle in joint_angles.items():
+        if jname in ctrl_addr:
+            data.ctrl[ctrl_addr[jname]] = angle
+
+
 def _apply_joints(data: mujoco.MjData,
                   qpos_addr: dict, dof_addr: dict,
                   joint_angles: dict[str, float],
                   zero_vel: bool) -> None:
-    """Escreve ângulos em qpos e, opcionalmente, zera qvel para cada junta."""
     for jname, angle in joint_angles.items():
         if jname in qpos_addr:
             data.qpos[qpos_addr[jname]] = angle
@@ -110,7 +128,6 @@ def _solve_leg(ik: IKSolver,
                body_pos: np.ndarray, body_yaw: float,
                sole_pos: np.ndarray, sole_yaw: float,
                leg: str, side: str) -> dict[str, float] | None:
-    """Roda IK e devolve dict {joint_name: angle} ou None se falhar."""
     ok, angles = ik.solve(body_pos, _rot_z(body_yaw),
                           sole_pos, _rot_z(sole_yaw), leg)
     if not ok:
@@ -119,7 +136,6 @@ def _solve_leg(ik: IKSolver,
         _joint_name(side, key): JOINT_SIGNS[key][side] * angles[idx]
         for idx, key in enumerate(_IK_KEYS)
     }
-
 
 _KEY_HELP = (
     "Teclas (terminal em foco):\n"
@@ -130,21 +146,19 @@ def _poll_key(engine: WalkingEngine) -> None:
     if not msvcrt.kbhit():
         return
     key = msvcrt.getwch().lower()
-    if   key == "w": engine.set_command(vx=0.08);  print("[CMD] Frente")
+    if   key == "w": engine.set_command(vx=0.15);  print("[CMD] Frente")
     elif key == "s": engine.set_command(vy=0.03);  print("[CMD] Lateral")
     elif key == "r": engine.set_command(wz=0.5);   print("[CMD] Rotação")
     elif key == "m": engine.set_command();          print("[CMD] Marcha no lugar")
     elif key == "x": engine.request_stop();         print("[CMD] Parando...")
     elif key == "q": os._exit(0)
 
-
-
 def main():
     model = build_model()
     data  = mujoco.MjData(model)
     mujoco.mj_resetData(model, data)
 
-    qpos_addr, dof_addr = _build_maps(model)
+    qpos_addr, dof_addr, ctrl_addr = _build_maps(model)
     ik = IKSolver()
 
     engine = WalkingEngine(**WALK_PARAMS)
@@ -155,15 +169,19 @@ def main():
     print(f"  Joints disponíveis ({len(qpos_addr)}): {sorted(qpos_addr)}")
     print(f"{'='*50}\n")
 
-    # Sempre via qpos — garante que o robô nasce na postura correta
     body_pos, body_yaw, l_sole, l_yaw, r_sole, r_yaw = engine._standing_pose()
     _set_free_joint(data, model, body_pos, _yaw_to_quat(body_yaw))
 
     l_angles = _solve_leg(ik, body_pos, body_yaw, l_sole, l_yaw, "left",  "l")
     r_angles = _solve_leg(ik, body_pos, body_yaw, r_sole, r_yaw, "right", "r")
-    if l_angles: _apply_joints(data, qpos_addr, dof_addr, l_angles, zero_vel=False)
-    if r_angles: _apply_joints(data, qpos_addr, dof_addr, r_angles, zero_vel=False)
+    if l_angles:
+        _apply_joints(data, qpos_addr, dof_addr, l_angles, zero_vel=False)
+        _apply_ctrl(data, ctrl_addr, l_angles)
+    if r_angles:
+        _apply_joints(data, qpos_addr, dof_addr, r_angles, zero_vel=False)
+        _apply_ctrl(data, ctrl_addr, r_angles)
     _apply_joints(data, qpos_addr, dof_addr, ARM_POSE, zero_vel=False)
+    _apply_ctrl(data, ctrl_addr, ARM_POSE)
     mujoco.mj_forward(model, data)
 
     dt         = model.opt.timestep
@@ -184,9 +202,9 @@ def main():
             r_angles = _solve_leg(ik, body_pos, body_yaw, r_sole, r_yaw, "right", "r")
 
             if PHYSICS:
-                if l_angles: _apply_joints(data, qpos_addr, dof_addr, l_angles, zero_vel=True)
-                if r_angles: _apply_joints(data, qpos_addr, dof_addr, r_angles, zero_vel=True)
-                _apply_joints(data, qpos_addr, dof_addr, ARM_POSE, zero_vel=True)
+                if l_angles: _apply_ctrl(data, ctrl_addr, l_angles)
+                if r_angles: _apply_ctrl(data, ctrl_addr, r_angles)
+                _apply_ctrl(data, ctrl_addr, ARM_POSE)
                 mujoco.mj_step(model, data)
             else:
                 _set_free_joint(data, model, body_pos, _yaw_to_quat(body_yaw))
@@ -197,6 +215,11 @@ def main():
                 mujoco.mj_forward(model, data)
 
             viewer.sync()
+
+            if int(sim_time / 0.5) != int((sim_time + dt) / 0.5):
+                adr = model.jnt_qposadr[0]
+                px, py, pz = data.qpos[adr], data.qpos[adr+1], data.qpos[adr+2]
+                print(f"[t={sim_time:.1f}s] body pos = ({px:.4f}, {py:.4f}, {pz:.4f})  state={engine.state}")
 
             sim_time  += dt
             elapsed    = time.perf_counter() - real_start
