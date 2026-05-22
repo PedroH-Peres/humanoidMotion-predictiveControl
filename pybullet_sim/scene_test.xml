@@ -1,0 +1,4 @@
+<mujoco>
+  <compiler meshdir="meshes"/>
+  <include file="urdf/aurea_urdf_pkg.urdf"/>
+</mujoco>
