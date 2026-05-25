@@ -8,7 +8,8 @@ JOINT_SIGNS = {
     "ank_roll":  {"l":  1.0,  "r":  1.0},
 }
 
-PHYSICS = True
+PHYSICS  = True
+USE_MPC  = True   # True → usa MPCWalking; False → usa AnalyticalWalking
 
 # -----------------------------------------------------------------------------
 #  GANHOS DOS ATUADORES DE POSIÇÃO
@@ -19,17 +20,17 @@ PHYSICS = True
 
 ACTUATOR_KP          = 120.0
 ACTUATOR_KV          = 12.0
-ACTUATOR_FORCE_RANGE = 5.0
+ACTUATOR_FORCE_RANGE = 80.0
 
 # -----------------------------------------------------------------------------
 #  PARÂMETROS DO MOTOR DE CAMINHADA
 # -----------------------------------------------------------------------------
 
 WALK_PARAMS = {
-    "T":        0.3,    # Período de um passo [s] — menor = mais rápido
+    "T":        0.4,    # Período de um passo [s] — menor = mais rápido
     "z_com":    0.22,   # Altura do torso [m]
-    "z_step":   0.025,  # Altura máxima do pé no ar [m]
-    "ds_ratio": 0.1,    # Fração do passo em apoio duplo (0 a 0.5)
+    "z_step":   0.04,  # Altura máxima do pé no ar [m]
+    "ds_ratio": 0.12,    # Fração do passo em apoio duplo (0 a 0.5)
     "y_sep":    0.054,  # Separação lateral dos pés [m]
 }
 

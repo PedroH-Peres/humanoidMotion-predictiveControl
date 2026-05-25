@@ -27,10 +27,10 @@ class WalkingEngine:
 
     def __init__(
         self,
-        T: float         = 0.3,
+        T: float         = 0.5,
         z_com: float     = 0.22,
-        z_step: float    = 0.03,
-        ds_ratio: float  = 0.1,
+        z_step: float    = 0.04,
+        ds_ratio: float  = 0.13,
         y_sep: float     = 0.054,
         g: float         = 9.81,
     ):

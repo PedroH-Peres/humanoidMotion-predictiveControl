@@ -15,7 +15,7 @@ os.chdir(os.path.join(os.path.dirname(__file__), ".."))
 from mujoco_sim.Utils.ik_solver import IKSolver
 from mujoco_sim.AnalyticalWalking.walking_engine import WalkingEngine
 from mujoco_sim.AnalyticalWalking.config import (
-    JOINT_SIGNS, WALK_PARAMS, ARM_POSE, PHYSICS,
+    JOINT_SIGNS, WALK_PARAMS, ARM_POSE, PHYSICS, USE_MPC,
     ACTUATOR_KP, ACTUATOR_KV, ACTUATOR_FORCE_RANGE,
     joint_name as _joint_name,
 )
@@ -146,7 +146,7 @@ def _poll_key(engine: WalkingEngine) -> None:
     if not msvcrt.kbhit():
         return
     key = msvcrt.getwch().lower()
-    if   key == "w": engine.set_command(vx=0.15);  print("[CMD] Frente")
+    if   key == "w": engine.set_command(vx=0.05);  print("[CMD] Frente")
     elif key == "s": engine.set_command(vy=0.03);  print("[CMD] Lateral")
     elif key == "r": engine.set_command(wz=0.5);   print("[CMD] Rotação")
     elif key == "m": engine.set_command();          print("[CMD] Marcha no lugar")
@@ -161,7 +161,12 @@ def main():
     qpos_addr, dof_addr, ctrl_addr = _build_maps(model)
     ik = IKSolver()
 
-    engine = WalkingEngine(**WALK_PARAMS)
+    if USE_MPC:
+        from mujoco_sim.MPCWalking.walking_engine import MPCWalkingEngine
+        from mujoco_sim.MPCWalking.config import MPC_PARAMS
+        engine = MPCWalkingEngine(dt=model.opt.timestep, **MPC_PARAMS)
+    else:
+        engine = WalkingEngine(**WALK_PARAMS)
 
     mode_label = "FÍSICA (mj_step)" if PHYSICS else "CINEMÁTICA (mj_forward)"
     print(f"\n{'='*50}")
@@ -202,6 +207,10 @@ def main():
             r_angles = _solve_leg(ik, body_pos, body_yaw, r_sole, r_yaw, "right", "r")
 
             if PHYSICS:
+                if USE_MPC:
+                    # Open-loop: impõe a posição do torso diretamente (trajetória do LIPM).
+                    # As pernas usam física para contato; o corpo segue o MPC sem lag.
+                    _set_free_joint(data, model, body_pos, _yaw_to_quat(body_yaw))
                 if l_angles: _apply_ctrl(data, ctrl_addr, l_angles)
                 if r_angles: _apply_ctrl(data, ctrl_addr, r_angles)
                 _apply_ctrl(data, ctrl_addr, ARM_POSE)
