@@ -1,6 +1,6 @@
 # humanoidMotion-predictiveControl
 
-Simulações de caminhada bípede para robôs humanoides usando cinemática inversa analítica e controle preditivo (MPC). O projeto tem dois ambientes: um mais antigo em PyBullet com o robô **Aurea** (URDF próprio), e um mais recente em MuJoCo com o **Robotis OP3**.
+Simulações de caminhada bípede para robôs humanoides usando cinemática inversa analítica e controle preditivo (MPC). O projeto tem dois ambientes: um em PyBullet com o robô **Aurea** (URDF próprio), e um mais recente em MuJoCo com o **Robotis OP3**.
 
 ---
 

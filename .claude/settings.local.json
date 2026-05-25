@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(cd /d \"d:\\\\Code\\\\Robotics\\\\humanoidMotion-predictiveControl\")",
-      "Bash(python -c ' *)"
-    ]
-  }
-}
