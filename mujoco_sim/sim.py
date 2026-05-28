@@ -4,7 +4,9 @@
 import os
 import sys
 import time
-import msvcrt
+import select
+import termios
+import tty
 import numpy as np
 import mujoco
 import mujoco.viewer
@@ -13,9 +15,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.chdir(os.path.join(os.path.dirname(__file__), ".."))
 
 from mujoco_sim.Utils.ik_solver import IKSolver
+from mujoco_sim.Utils.torso_controller import SimulatedIMU, TorsoOrientationController
 from mujoco_sim.AnalyticalWalking.walking_engine import WalkingEngine
 from mujoco_sim.AnalyticalWalking.config import (
     JOINT_SIGNS, WALK_PARAMS, ARM_POSE, PHYSICS, USE_MPC,
+    USE_TORSO_CTRL, TORSO_CTRL_PARAMS,
     ACTUATOR_KP, ACTUATOR_KV, ACTUATOR_FORCE_RANGE,
     joint_name as _joint_name,
 )
@@ -142,16 +146,28 @@ _KEY_HELP = (
     "  W=frente  S=lateral  R=rotação  M=marcha  X=parar  Q=sair"
 )
 
+_term_fd = sys.stdin.fileno()
+_term_old = None
+
+def _setup_terminal():
+    global _term_old
+    _term_old = termios.tcgetattr(_term_fd)
+    tty.setcbreak(_term_fd)
+
+def _restore_terminal():
+    if _term_old is not None:
+        termios.tcsetattr(_term_fd, termios.TCSADRAIN, _term_old)
+
 def _poll_key(engine: WalkingEngine) -> None:
-    if not msvcrt.kbhit():
+    if not select.select([sys.stdin], [], [], 0)[0]:
         return
-    key = msvcrt.getwch().lower()
+    key = sys.stdin.read(1).lower()
     if   key == "w": engine.set_command(vx=0.05);  print("[CMD] Frente")
     elif key == "s": engine.set_command(vy=0.03);  print("[CMD] Lateral")
-    elif key == "r": engine.set_command(wz=0.5);   print("[CMD] Rotação")
+    elif key == "r": engine.set_command(wz=0.5);   print("[CMD] Rotacao")
     elif key == "m": engine.set_command();          print("[CMD] Marcha no lugar")
     elif key == "x": engine.request_stop();         print("[CMD] Parando...")
-    elif key == "q": os._exit(0)
+    elif key == "q": _restore_terminal(); os._exit(0)
 
 def main():
     model = build_model()
@@ -168,9 +184,14 @@ def main():
     else:
         engine = WalkingEngine(**WALK_PARAMS)
 
-    mode_label = "FÍSICA (mj_step)" if PHYSICS else "CINEMÁTICA (mj_forward)"
+    imu         = SimulatedIMU()
+    torso_ctrl  = TorsoOrientationController(**TORSO_CTRL_PARAMS)
+
+    mode_label  = "FÍSICA (mj_step)" if PHYSICS else "CINEMÁTICA (mj_forward)"
+    ctrl_label  = "ON" if USE_TORSO_CTRL else "OFF"
     print(f"\n{'='*50}")
     print(f"  MODO: {mode_label}")
+    print(f"  Torso controller: {ctrl_label}")
     print(f"  Joints disponíveis ({len(qpos_addr)}): {sorted(qpos_addr)}")
     print(f"{'='*50}\n")
 
@@ -193,6 +214,7 @@ def main():
     sim_time   = 0.0
     real_start = time.perf_counter()
 
+    _setup_terminal()
     with mujoco.viewer.launch_passive(model, data) as viewer:
         viewer.cam.lookat[:] = [0.0, 0.0, 0.2]
         print(f"[MODO: {mode_label}]")
@@ -205,6 +227,18 @@ def main():
 
             l_angles = _solve_leg(ik, body_pos, body_yaw, l_sole, l_yaw, "left",  "l")
             r_angles = _solve_leg(ik, body_pos, body_yaw, r_sole, r_yaw, "right", "r")
+
+            if USE_TORSO_CTRL:
+                imu_reading = imu.read(model, data)
+                corrections = torso_ctrl.compute(imu_reading)
+                if l_angles:
+                    for joint, delta in corrections.items():
+                        if joint in l_angles:
+                            l_angles[joint] += delta
+                if r_angles:
+                    for joint, delta in corrections.items():
+                        if joint in r_angles:
+                            r_angles[joint] += delta
 
             if PHYSICS:
                 if USE_MPC:
@@ -228,10 +262,16 @@ def main():
             if int(sim_time / 0.5) != int((sim_time + dt) / 0.5):
                 adr = model.jnt_qposadr[0]
                 px, py, pz = data.qpos[adr], data.qpos[adr+1], data.qpos[adr+2]
-                print(f"[t={sim_time:.1f}s] body pos = ({px:.4f}, {py:.4f}, {pz:.4f})  state={engine.state}")
+                if USE_TORSO_CTRL:
+                    r = imu.read(model, data)
+                    imu_str = f"  imu=({np.degrees(r['pitch']):.1f}°p, {np.degrees(r['roll']):.1f}°r)"
+                else:
+                    imu_str = ""
+                print(f"[t={sim_time:.1f}s] pos=({px:.3f},{py:.3f},{pz:.3f})  state={engine.state}{imu_str}")
 
             sim_time  += dt
             elapsed    = time.perf_counter() - real_start
             sleep_time = sim_time - elapsed
             if sleep_time > 0:
                 time.sleep(sleep_time)
+    _restore_terminal()

@@ -8,8 +8,19 @@ JOINT_SIGNS = {
     "ank_roll":  {"l":  1.0,  "r":  1.0},
 }
 
-PHYSICS  = True
-USE_MPC  = True   # True → usa MPCWalking; False → usa AnalyticalWalking
+PHYSICS        = True
+USE_MPC        = False  # True → usa MPCWalking; False → usa AnalyticalWalking
+USE_TORSO_CTRL = True   # True → ativa controlador de orientacao do torso via IMU
+
+TORSO_CTRL_PARAMS = {
+    "kp_pitch":     1.5,
+    "kd_pitch":     0.05,
+    "kp_roll":      1.5,
+    "kd_roll":      0.05,
+    "max_delta":    0.25,
+    "target_pitch": 0.0,  
+    "target_roll":  0.0, 
+}
 
 # -----------------------------------------------------------------------------
 #  GANHOS DOS ATUADORES DE POSIÇÃO
