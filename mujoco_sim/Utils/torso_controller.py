@@ -38,11 +38,11 @@ class TorsoOrientationController:
 
     def __init__(
         self,
-        kp_pitch: float = 1.5,
-        kd_pitch: float = 0.05,
+        kp_pitch: float = 1.2,
+        kd_pitch: float = 0.04,
         kp_roll:  float = 1.5,
         kd_roll:  float = 0.05,
-        max_delta: float = 0.25,
+        max_delta: float = 0.20,
         target_pitch: float = 0.0,  
         target_roll:  float = 0.0,  
     ):
