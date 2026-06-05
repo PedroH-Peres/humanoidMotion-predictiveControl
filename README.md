@@ -8,7 +8,7 @@ Simulações de caminhada bípede para robôs humanoides usando cinemática inve
 
 ```
 ├── pybullet_sim/   # Simulação do Aurea — MPC + IK analítica
-└── mujoco_sim/     # Simulação do OP3  — caminhada analítica ou MPC
+└── mujoco_sim/     # Simulação do OP3  — caminhada analítica
     ├── AnalyticalWalking/
     └── Utils/
 ```
