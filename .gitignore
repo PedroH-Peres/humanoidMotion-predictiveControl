@@ -1,2 +1,15 @@
-.claude
-./.claude
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Simulator logs
+MUJOCO_LOG.TXT
+
+# Editors / tools
+.vscode/
+.idea/
+.claude/
