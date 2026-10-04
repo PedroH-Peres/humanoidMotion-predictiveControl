@@ -5,6 +5,7 @@ Pipeline per control tick:
 
     WalkingEngine.step()  →  desired pelvis + sole poses (world frame)
     IKSolver.solve()      →  6 joint angles per leg
+    TorsoOrientationController (optional) → hip corrections from a simulated IMU
     data.ctrl             →  PD position actuators  →  mj_step
 
 Run from the repository root:
@@ -24,8 +25,10 @@ import numpy as np
 from .analytical_walking.walking_engine import WalkingEngine, WalkTarget
 from .config import (
     ACTUATOR_FORCE_RANGE, ACTUATOR_KP, ACTUATOR_KV, ARM_POSE, JOINT_SIGNS,
-    KEY_COMMANDS, PHYSICS, WALK_PARAMS, joint_name,
+    KEY_COMMANDS, PHYSICS, TORSO_CTRL_PARAMS, USE_TORSO_CTRL, WALK_PARAMS,
+    joint_name,
 )
+from .control.torso_controller import SimulatedIMU, TorsoOrientationController
 from .kinematics.ik_solver import IKSolver
 
 # Order of the angles returned by IKSolver.solve
@@ -120,8 +123,11 @@ def _build_maps(model: mujoco.MjModel) -> tuple[dict, dict, dict]:
 class Simulation:
     """OP3 model + walking engine + IK, advanced one control tick at a time."""
 
-    def __init__(self, physics: bool = PHYSICS):
+    def __init__(self, physics: bool = PHYSICS, use_torso_ctrl: bool = USE_TORSO_CTRL):
         self.physics = physics
+        self.use_torso_ctrl = use_torso_ctrl
+        self.imu = SimulatedIMU()
+        self.torso_ctrl = TorsoOrientationController(**TORSO_CTRL_PARAMS)
         self.model = build_model()
         self.data = mujoco.MjData(self.model)
         self.qpos_addr, self.dof_addr, self.ctrl_addr = _build_maps(self.model)
@@ -157,6 +163,13 @@ class Simulation:
         """Advance the engine and the simulation by one timestep."""
         target = self.engine.step(self.dt)
         leg_angles = self._solve_legs(target)
+
+        if self.use_torso_ctrl:
+            corrections = self.torso_ctrl.compute(self.imu.read(self.model, self.data))
+            for joint_angles in leg_angles:
+                for name, delta in corrections.items():
+                    if name in joint_angles:
+                        joint_angles[name] += delta
 
         if self.physics:
             for joint_angles in (*leg_angles, ARM_POSE):
@@ -257,6 +270,7 @@ def main() -> None:
     mode_label = "PHYSICS (mj_step)" if sim.physics else "KINEMATICS (mj_forward)"
     print(f"\n{'=' * 50}")
     print(f"  MODE: {mode_label}")
+    print(f"  Torso controller: {'ON' if sim.use_torso_ctrl else 'OFF'}")
     print(f"  Joints ({len(sim.qpos_addr)}): {sorted(sim.qpos_addr)}")
     print(f"{'=' * 50}\n")
     print(_KEY_HELP, "\n")
@@ -283,8 +297,12 @@ def main() -> None:
 
             if int(sim.time / 0.5) != int((sim.time - sim.dt) / 0.5):
                 px, py, pz = sim.body_pos
-                print(f"[t={sim.time:.1f}s] body pos = ({px:.4f}, {py:.4f}, {pz:.4f})  "
-                      f"state={sim.engine.state.name}")
+                imu_str = ""
+                if sim.use_torso_ctrl:
+                    r = sim.imu.read(sim.model, sim.data)
+                    imu_str = f"  imu=({np.degrees(r['pitch']):.1f}°p, {np.degrees(r['roll']):.1f}°r)"
+                print(f"[t={sim.time:.1f}s] pos=({px:.3f},{py:.3f},{pz:.3f})  "
+                      f"state={sim.engine.state.name}{imu_str}")
 
             # Keep the simulation in sync with wall-clock time
             sleep_time = sim.time - (time.perf_counter() - real_start)

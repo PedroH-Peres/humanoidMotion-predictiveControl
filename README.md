@@ -72,6 +72,7 @@ Tudo em [`mujoco_sim/config.py`](mujoco_sim/config.py):
 | Parâmetro | Efeito |
 |-----------|--------|
 | `PHYSICS` | `True`: `mj_step` com física real. `False`: só cinemática (útil para depurar o gerador e o IK) |
+| `USE_TORSO_CTRL`, `TORSO_CTRL_PARAMS` | Liga e ajusta o controlador PD que corrige o quadril a partir da inclinação do torso (IMU simulada) |
 | `WALK_PARAMS` | Período do passo `T`, altura do torso `z_com`, altura do pé `z_step`, fração de apoio duplo `ds_ratio`, separação dos pés `y_sep` |
 | `KEY_COMMANDS` | Velocidades associadas às teclas |
 | `ACTUATOR_KP/KV/FORCE_RANGE` | Ganhos e limite de torque dos atuadores |
@@ -85,8 +86,10 @@ mujoco_sim/
 ├── analytical_walking/
 │   ├── trajectory_generator.py   # LIPM em forma fechada, pé em balanço, planejamento de passos
 │   └── walking_engine.py         # máquina de estados da caminhada
-└── kinematics/
-    └── ik_solver.py              # IK analítica 6-DoF da perna do OP3
+├── kinematics/
+│   └── ik_solver.py              # IK analítica 6-DoF da perna do OP3
+└── control/
+    └── torso_controller.py       # IMU simulada + PD de orientação do torso
 ```
 
 ---

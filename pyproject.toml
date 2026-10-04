@@ -19,7 +19,7 @@ tools = ["matplotlib"]
 dev = ["pytest"]
 
 [tool.setuptools]
-packages = ["mujoco_sim", "mujoco_sim.analytical_walking", "mujoco_sim.kinematics"]
+packages = ["mujoco_sim", "mujoco_sim.analytical_walking", "mujoco_sim.control", "mujoco_sim.kinematics"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

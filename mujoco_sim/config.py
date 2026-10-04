@@ -13,6 +13,24 @@ Edit the values here to change how the robot is simulated and how it walks.
 PHYSICS = True
 
 # -----------------------------------------------------------------------------
+#  TORSO ORIENTATION CONTROLLER (simulated IMU → hip corrections)
+#  A PD on torso pitch/roll that adds corrections to the hip joint targets.
+#  Gains are in [rad of hip correction / rad of tilt] and [... / (rad/s)].
+# -----------------------------------------------------------------------------
+
+USE_TORSO_CTRL = True
+
+TORSO_CTRL_PARAMS = {
+    "kp_pitch":     1.5,
+    "kd_pitch":     0.05,
+    "kp_roll":      1.5,
+    "kd_roll":      0.05,
+    "max_delta":    0.25,   # clamp on each correction [rad]
+    "target_pitch": 0.0,    # desired torso pitch [rad]
+    "target_roll":  0.0,    # desired torso roll [rad]
+}
+
+# -----------------------------------------------------------------------------
 #  POSITION ACTUATOR GAINS (applied to every joint)
 #  ACTUATOR_KP          — proportional gain [N·m/rad]
 #  ACTUATOR_KV          — derivative (damping) gain [N·m·s/rad]
