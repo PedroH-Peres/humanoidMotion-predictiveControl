@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "humanoid-motion-predictive-control"
+version = "0.1.0"
+description = "Bipedal walking simulations (LIPM, MPC, analytical IK) in PyBullet and MuJoCo"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Pedro H. Peres" }]
+requires-python = ">=3.10"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+mujoco = ["mujoco>=3.2", "robot_descriptions>=1.12"]
+pybullet = ["pybullet", "cvxpy", "osqp"]
+tools = ["matplotlib"]
+dev = ["pytest"]
+
+[tool.setuptools]
+packages = ["mujoco_sim", "mujoco_sim.analytical_walking", "mujoco_sim.control", "mujoco_sim.kinematics"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "pybullet_sim"]
+markers = ["slow: runs a full physics simulation (deselect with -m 'not slow')"]

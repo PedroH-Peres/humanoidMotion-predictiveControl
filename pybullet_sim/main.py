@@ -1,96 +1,126 @@
-import pybullet as p
-import pybullet_data
+"""
+Aurea robot walking in PyBullet, with an MPC-planned CoM and analytical IK.
+
+Run (from any directory):
+
+    python pybullet_sim/main.py                 # GUI, cmd_vx = 0.1 m/s
+    python pybullet_sim/main.py --vx 0.05
+    python pybullet_sim/main.py --headless --duration 10
+
+Note: the MPC runs in open loop. The CoM state fed back into the MPC is its
+own prediction, not a measurement from the simulator, so the planner acts as a
+trajectory generator and the PD joint controllers do the stabilisation.
+"""
+
+import argparse
+import os
 import time
 
-from ik_solver import RelativeAnalyticalIK, NumericalIK
-from trajectory_generator import TrajectoryGenerator
+import pybullet as p
+import pybullet_data
 
-def setup_first_pose(robotId, ik, brain):
-    """ Configura a pose inicial de agachamento e braços fixos """
-    ID_R_SHO_PITCH, ID_L_SHO_PITCH = 5, 2
-    ID_R_SHO_ROLL, ID_L_SHO_ROLL   = 6, 3
-    ID_R_ELBOW, ID_L_ELBOW         = 7, 4
+from kinematics import LegIK
+from mpc_planner import MPCPlanner
 
-    ik.set_fixed_joint(ID_R_SHO_ROLL, 1.5)
-    ik.set_fixed_joint(ID_L_SHO_ROLL, -1.5)
-    ik.set_fixed_joint(ID_R_SHO_PITCH, 0.6)
-    ik.set_fixed_joint(ID_L_SHO_PITCH, 0.6)
-    ik.set_fixed_joint(ID_R_ELBOW, 2.1) 
-    ik.set_fixed_joint(ID_L_ELBOW, -2.1)
+URDF_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "assets", "aurea", "aurea.urdf")
 
-    print("Iniciando a First Pose...")
-    ang_d_init = ik.solve_leg(0.0, -brain.Y_SEP/2, -brain.H_TARGET, is_left=False)
-    ang_e_init = ik.solve_leg(0.0,  brain.Y_SEP/2, -brain.H_TARGET, is_left=True)
+DT_SIM = 1 / 240.   # physics timestep [s]
+DT_MPC = 0.02       # MPC timestep [s]
 
-    for i, j in enumerate(ik.JUNTAS_DIR): p.resetJointState(robotId, j, ang_d_init[i])
-    for i, j in enumerate(ik.JUNTAS_ESQ): p.resetJointState(robotId, j, ang_e_init[i])
-    for j_arm, ang_arm in ik.fixed_joints.items(): p.resetJointState(robotId, j_arm, ang_arm)
+# KNOWN ISSUE: DT_MPC is not a multiple of DT_SIM. int(0.02 / (1/240)) = 4, so
+# each MPC tick advances the trajectory clock t by 0.020 s while physics only
+# advances 4/240 ≈ 0.0167 s: the gait runs 1.2× faster than planned (steps of
+# ~0.25 s instead of T_STEP = 0.3 s, ~0.12 m/s for cmd_vx = 0.1). The current
+# gains were tuned with this mismatch; making the clocks consistent (e.g.
+# DT_MPC = 5 * DT_SIM) makes the robot fall until the planner is re-tuned.
+PHYSICS_STEPS_PER_MPC = int(DT_MPC / DT_SIM)
 
-    for _ in range(360):
-        ik.apply(ang_d_init, ang_e_init)
+# Fixed arm pose [rad] held while walking
+ARM_POSE = {
+    "r_sho_roll": 1.5, "l_sho_roll": -1.5,
+    "r_sho_pitch": 0.6, "l_sho_pitch": 0.6,
+    "r_el": 2.1, "l_el": -2.1,
+}
+
+
+def setup_first_pose(ik: LegIK, planner: MPCPlanner, realtime: bool) -> None:
+    """Crouch to the walking height with the arms fixed, then let it settle."""
+    for joint, angle in ARM_POSE.items():
+        ik.set_fixed_joint(joint, angle)
+
+    print("Moving to the initial pose...")
+    right = ik.solve_leg(0.0, -planner.Y_SEP / 2, -planner.H_TARGET, is_left=False)
+    left = ik.solve_leg(0.0, planner.Y_SEP / 2, -planner.H_TARGET, is_left=True)
+    ik.reset(right, left)
+
+    for _ in range(360):  # 1.5 s
+        ik.apply(right, left)
         p.stepSimulation()
-        time.sleep(1/240.)
-    print("First Pose estabilizada!")
+        if realtime:
+            time.sleep(DT_SIM)
+    print("Initial pose settled.")
 
-def main():
-    p.connect(p.GUI)
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[1])
+    parser.add_argument("--vx", type=float, default=0.1, help="forward speed [m/s]")
+    parser.add_argument("--headless", action="store_true", help="run without GUI, as fast as possible")
+    parser.add_argument("--duration", type=float, default=None, help="stop after this many seconds")
+    args = parser.parse_args()
+
+    p.connect(p.DIRECT if args.headless else p.GUI)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     p.setGravity(0, 0, -9.81)
     p.loadURDF("plane.urdf")
-    
-    robotId = p.loadURDF("urdf/aurea_urdf_pkg.urdf", [0, 0, 0.35], useFixedBase=False)
+    robot_id = p.loadURDF(URDF_PATH, [0, 0, 0.35], useFixedBase=False)
 
-    dt_mpc = 0.02
-    ik = RelativeAnalyticalIK(robotId)
-    brain = TrajectoryGenerator(h_target=0.2, dt_mpc=dt_mpc)
+    ik = LegIK(robot_id)
+    planner = MPCPlanner(h_target=0.2, dt_mpc=DT_MPC)
+    realtime = not args.headless
 
-    setup_first_pose(robotId, ik, brain)
+    setup_first_pose(ik, planner, realtime)
 
-
+    # MPC state (open loop, see module docstring)
     com_x, com_vx = 0.0, 0.0
     com_y, com_vy = 0.0, 0.0
-    
-    t_global = 0.0
-    dt_sim = 1/240.
-    passos_fisica_por_mpc = int(dt_mpc / dt_sim) 
-    
-    cmd_vx = 0.1
 
-    print("Iniciando Caminhada Controlada por MPC!")
-    while True:
-        
+    t = 0.0
 
-        com_ref_x, zmp_ref_x, zmp_min_x, zmp_max_x = brain.get_references_x(t_global, cmd_vx)
-        com_ref_y, zmp_ref_y, zmp_min_y, zmp_max_y = brain.get_references_y(t_global)
-        
-        next_com_x, next_com_vx = brain.solve_mpc(com_x, com_vx, com_ref_x, zmp_ref_x, zmp_min_x, zmp_max_x)
-        next_com_y, next_com_vy = brain.solve_mpc(com_y, com_vy, com_ref_y, zmp_ref_y, zmp_min_y, zmp_max_y)
+    print(f"Walking with MPC at cmd_vx = {args.vx} m/s")
+    while args.duration is None or t < args.duration:
+        com_ref_x, zmp_ref_x, zmp_min_x, zmp_max_x = planner.get_references_x(t, args.vx)
+        com_ref_y, zmp_ref_y, zmp_min_y, zmp_max_y = planner.get_references_y(t)
 
+        next_com_x, next_com_vx = planner.solve_mpc(com_x, com_vx, com_ref_x, zmp_ref_x, zmp_min_x, zmp_max_x)
+        next_com_y, next_com_vy = planner.solve_mpc(com_y, com_vy, com_ref_y, zmp_ref_y, zmp_min_y, zmp_max_y)
 
-        for step_fisica in range(passos_fisica_por_mpc):
-            t_instante = t_global + (step_fisica * dt_sim)
-            progresso_mpc = (step_fisica + 1) / passos_fisica_por_mpc
-            
-            com_math_x = com_x + (next_com_x - com_x) * progresso_mpc
-            com_math_y = com_y + (next_com_y - com_y) * progresso_mpc
-            foot_r_math, foot_l_math = brain.get_foot_trajectories(t_instante, cmd_vx)
+        for i in range(PHYSICS_STEPS_PER_MPC):
+            # Linear interpolation of the CoM between two MPC samples
+            alpha = (i + 1) / PHYSICS_STEPS_PER_MPC
+            com_now_x = com_x + (next_com_x - com_x) * alpha
+            com_now_y = com_y + (next_com_y - com_y) * alpha
+            foot_r, foot_l = planner.get_foot_trajectories(t + i * DT_SIM, args.vx)
 
-            dx_r, dy_r, dz_r = foot_r_math[0] - com_math_x, foot_r_math[1] - com_math_y, foot_r_math[2] - brain.H_TARGET
-            dx_l, dy_l, dz_l = foot_l_math[0] - com_math_x, foot_l_math[1] - com_math_y, foot_l_math[2] - brain.H_TARGET
+            # Feet relative to the torso → IK
+            right = ik.solve_leg(foot_r[0] - com_now_x, foot_r[1] - com_now_y,
+                                 foot_r[2] - planner.H_TARGET, is_left=False)
+            left = ik.solve_leg(foot_l[0] - com_now_x, foot_l[1] - com_now_y,
+                                foot_l[2] - planner.H_TARGET, is_left=True)
 
-            _, orn_b = p.getBasePositionAndOrientation(robotId)
-            roll, pitch, _ = p.getEulerFromQuaternion(orn_b)
-
-            angulos_d = ik.solve_leg(dx_r, dy_r, dz_r, is_left=False)
-            angulos_e = ik.solve_leg(dx_l, dy_l, dz_l, is_left=True)
-
-            ik.apply(angulos_d, angulos_e)
+            ik.apply(right, left)
             p.stepSimulation()
-            time.sleep(dt_sim)
-            
+            if realtime:
+                time.sleep(DT_SIM)
+
         com_x, com_vx = next_com_x, next_com_vx
         com_y, com_vy = next_com_y, next_com_vy
-        t_global += dt_mpc
+        t += DT_MPC
+
+    pos, _ = p.getBasePositionAndOrientation(robot_id)
+    print(f"Finished at t={t:.1f}s, base = ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f})")
+    p.disconnect()
+
 
 if __name__ == "__main__":
     main()
