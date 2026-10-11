@@ -15,6 +15,6 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Install dependencies
-        run: pip install -e ".[mujoco,pybullet,dev]"
+        run: pip install -e ".[mujoco,dev]"
       - name: Run tests
         run: pytest -v
