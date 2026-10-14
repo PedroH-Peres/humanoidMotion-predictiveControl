@@ -24,11 +24,13 @@ import numpy as np
 
 from .analytical_walking.walking_engine import WalkingEngine, WalkTarget
 from .config import (
-    ACTUATOR_FORCE_RANGE, ACTUATOR_KP, ACTUATOR_KV, ARM_POSE, CONTACT_IMPRATIO,
-    CONTACT_SOLIMP, CONTACT_SOLREF, FIELD_SIZE, JOINT_SIGNS, KEY_COMMANDS, PHYSICS,
-    RENDER_FPS, SPAWN_CLEARANCE, TORSO_CTRL_PARAMS, USE_TORSO_CTRL, WALK_PARAMS,
+    ACTUATOR_FORCE_RANGE, ACTUATOR_KP, ACTUATOR_KV, ARM_POSE, BALL_POSITION,
+    BALL_SIZE, CONTACT_IMPRATIO, CONTACT_SOLIMP, CONTACT_SOLREF, FIELD_SIZE,
+    JOINT_SIGNS, KEY_COMMANDS, PHYSICS, RENDER_FPS, SPAWN_CLEARANCE,
+    TORSO_CTRL_PARAMS, USE_TORSO_CTRL, WALK_PARAMS,
     joint_name,
 )
+from .ball import add_ball, configure_ball
 from .control.torso_controller import SimulatedIMU, TorsoOrientationController
 from .field import add_field
 from .kinematics.ik_solver import IKSolver
@@ -85,11 +87,16 @@ def build_model() -> mujoco.MjModel:
             geom.solref = solref
             geom.solimp = solimp
 
-    # Added after the loop above so the goals keep their collision with the robot
+    # Added after the loop above so the goals and the ball keep their collision with
+    # the robot. The ball goes last so the robot's free joint stays the first joint.
     if FIELD_SIZE:
         add_field(spec, FIELD_SIZE)
+    if BALL_SIZE:
+        add_ball(spec, BALL_SIZE, BALL_POSITION)
 
     model = spec.compile()
+    if BALL_SIZE:
+        configure_ball(model)
 
     # Damping on the floating base (3 translational + 3 rotational DoFs)
     dof_start = model.jnt_dofadr[0]

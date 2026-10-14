@@ -69,6 +69,7 @@ Tudo em [`mujoco_sim/config.py`](mujoco_sim/config.py):
 | Parâmetro | Efeito |
 |-----------|--------|
 | `FIELD_SIZE` | Campo da RoboCup Humanoid League: `"kid"` (9 × 6 m) ou `"adult"` (14 × 9 m); `None` para chão liso sem campo e gols |
+| `BALL_SIZE`, `BALL_POSITION` | Bola de futebol: tamanho FIFA 1 a 5 (raio de 7 a 11,25 cm, massa de 205 a 430 g) e posição inicial `(x, y)` no referencial do campo; `BALL_SIZE = None` remove a bola |
 | `RENDER_FPS` | Taxa de atualização do viewer; vários passos de física rodam por quadro |
 | `PHYSICS` | `True`: `mj_step` com física real. `False`: só cinemática (útil para depurar o gerador e o IK) |
 | `USE_TORSO_CTRL`, `TORSO_CTRL_PARAMS` | Liga e ajusta o controlador PD que corrige o quadril a partir da inclinação do torso (IMU simulada) |
@@ -83,6 +84,7 @@ mujoco_sim/
 ├── sim.py                        # modelo MuJoCo, laço de simulação, teclado
 ├── config.py                     # todos os parâmetros
 ├── field.py                      # campo e gols da RoboCup (dimensões oficiais)
+├── ball.py                       # bola de futebol (corpo livre com massa e amortecimento)
 ├── analytical_walking/
 │   ├── trajectory_generator.py   # LIPM em forma fechada, pé em balanço, planejamento de passos
 │   └── walking_engine.py         # máquina de estados da caminhada
@@ -112,6 +114,7 @@ Os testes conferem propriedades da trajetória (continuidade, pé nunca abaixo d
 
 - O gerador de trajetória analítico é um port em Python do `trajectory_generator.cpp` do pacote ROS2 **aurea_walk**, com duas correções no perfil de pouso do pé (veja os comentários no código).
 - O campo e os gols (`mujoco_sim/field.py`) são um port do `RobocupSoccerField.proto` e do `RobocupGoal.proto` do [Webots](https://github.com/cyberbotics/webots/tree/R2025a/projects/samples/contests/robocup/protos) (R2025a, Apache License 2.0). As linhas são caixas planas em vez da malha de triângulos do original, e a física do gramado (`turfPhysics`) não foi reproduzida.
+- A bola (`mujoco_sim/ball.py`) usa só os parâmetros físicos do `RobocupSoccerBall.proto` do Webots (raio, massa e amortecimento). A malha 3D dele tem licença própria da Cyberbotics, restrita ao uso com o Webots, e por isso não foi copiada: a bola aqui é uma esfera com textura xadrez.
 - Modelo do OP3: [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie/tree/main/robotis_op3), via [robot_descriptions](https://github.com/robot-descriptions/robot_descriptions.py).
 
 ## Licença

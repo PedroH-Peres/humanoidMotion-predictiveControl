@@ -25,6 +25,15 @@ SPAWN_CLEARANCE = 0.01
 FIELD_SIZE = "kid"
 
 # -----------------------------------------------------------------------------
+#  SOCCER BALL (see ball.py)
+#  BALL_SIZE     — FIFA size 1..5 (radius 7–11 cm, mass 205–430 g); None → no ball
+#  BALL_POSITION — initial (x, y) in the field frame [m]; the robot starts at (0, 0)
+# -----------------------------------------------------------------------------
+
+BALL_SIZE = 1
+BALL_POSITION = (0.4, 0.0)
+
+# -----------------------------------------------------------------------------
 #  VIEWER
 #  RENDER_FPS — how often the viewer is synced [Hz]. Each viewer.sync() is far
 #  costlier than a physics step, so several steps run per rendered frame.
