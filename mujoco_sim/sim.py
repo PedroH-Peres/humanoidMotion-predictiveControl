@@ -24,8 +24,9 @@ import numpy as np
 
 from .analytical_walking.walking_engine import WalkingEngine, WalkTarget
 from .config import (
-    ACTUATOR_FORCE_RANGE, ACTUATOR_KP, ACTUATOR_KV, ARM_POSE, JOINT_SIGNS,
-    KEY_COMMANDS, PHYSICS, TORSO_CTRL_PARAMS, USE_TORSO_CTRL, WALK_PARAMS,
+    ACTUATOR_FORCE_RANGE, ACTUATOR_KP, ACTUATOR_KV, ARM_POSE, CONTACT_IMPRATIO,
+    CONTACT_SOLIMP, CONTACT_SOLREF, JOINT_SIGNS, KEY_COMMANDS, PHYSICS,
+    SPAWN_CLEARANCE, TORSO_CTRL_PARAMS, USE_TORSO_CTRL, WALK_PARAMS,
     joint_name,
 )
 from .control.torso_controller import SimulatedIMU, TorsoOrientationController
@@ -55,14 +56,13 @@ def build_model() -> mujoco.MjModel:
     spec.option.gravity = [0.0, 0.0, -9.81]
     spec.option.integrator = mujoco.mjtIntegrator.mjINT_IMPLICIT
     spec.option.solver = mujoco.mjtSolver.mjSOL_NEWTON
-    spec.option.impratio = 50.0          # stiffer friction cone → less foot slip
+    spec.option.impratio = CONTACT_IMPRATIO
     spec.option.iterations = 40
     spec.option.noslip_iterations = 10
     spec.option.tolerance = 1e-4
 
-    # Stiff, nearly hard contacts between the feet and the floor
-    solref = [0.010, 2.0]
-    solimp = [0.99, 0.9999, 0.0001, 0.5, 3]
+    solref = CONTACT_SOLREF
+    solimp = CONTACT_SOLIMP
 
     floor = spec.worldbody.add_geom()
     floor.name = "floor"
@@ -150,10 +150,11 @@ class Simulation:
         return float(2.0 * np.arctan2(z, w))
 
     def reset(self) -> None:
-        """Place the robot in the engine's standing pose."""
+        """Place the robot in the engine's standing pose, SPAWN_CLEARANCE above the floor."""
         mujoco.mj_resetData(self.model, self.data)
         target = self.engine.standing_pose()
-        self._set_free_joint(target.body_pos, target.body_yaw)
+        spawn_pos = target.body_pos + np.array([0.0, 0.0, SPAWN_CLEARANCE if self.physics else 0.0])
+        self._set_free_joint(spawn_pos, target.body_yaw)
         for joint_angles in (*self._solve_legs(target), ARM_POSE):
             self._set_joints(joint_angles)
             self._set_ctrl(joint_angles)

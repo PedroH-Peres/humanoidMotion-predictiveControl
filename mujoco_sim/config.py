@@ -12,6 +12,10 @@ Edit the values here to change how the robot is simulated and how it walks.
 
 PHYSICS = True
 
+# Height [m] above the floor at which the robot is spawned in physics mode, so the
+# feet start free of contact and the robot settles onto the ground
+SPAWN_CLEARANCE = 0.01
+
 # -----------------------------------------------------------------------------
 #  TORSO ORIENTATION CONTROLLER (simulated IMU → hip corrections)
 #  A PD on torso pitch/roll that adds corrections to the hip joint targets.
@@ -40,6 +44,21 @@ TORSO_CTRL_PARAMS = {
 ACTUATOR_KP = 120.0
 ACTUATOR_KV = 12.0
 ACTUATOR_FORCE_RANGE = 80.0
+
+# -----------------------------------------------------------------------------
+#  FOOT-FLOOR CONTACT
+#  Contacts that are too stiff make the foot corners hit the floor with large
+#  impulses and the robot bounce. Softer values keep the feet planted.
+#  CONTACT_SOLREF — (time constant [s], damping ratio); the time constant is
+#                   clamped by MuJoCo to 2 * timestep
+#  CONTACT_SOLIMP — impedance (dmin, dmax, width [m], midpoint, power);
+#                   lower dmin/dmax = softer contact
+#  CONTACT_IMPRATIO — friction-cone stiffness relative to the normal (1 = MuJoCo default)
+# -----------------------------------------------------------------------------
+
+CONTACT_SOLREF = [0.010, 2.0]
+CONTACT_SOLIMP = [0.9, 0.95, 0.001, 0.5, 2]
+CONTACT_IMPRATIO = 1.0
 
 # -----------------------------------------------------------------------------
 #  WALKING ENGINE PARAMETERS
