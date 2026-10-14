@@ -17,6 +17,14 @@ PHYSICS = True
 SPAWN_CLEARANCE = 0.01
 
 # -----------------------------------------------------------------------------
+#  VIEWER
+#  RENDER_FPS — how often the viewer is synced [Hz]. Each viewer.sync() is far
+#  costlier than a physics step, so several steps run per rendered frame.
+# -----------------------------------------------------------------------------
+
+RENDER_FPS = 60
+
+# -----------------------------------------------------------------------------
 #  TORSO ORIENTATION CONTROLLER (simulated IMU → hip corrections)
 #  A PD on torso pitch/roll that adds corrections to the hip joint targets.
 #  Gains are in [rad of hip correction / rad of tilt] and [... / (rad/s)].

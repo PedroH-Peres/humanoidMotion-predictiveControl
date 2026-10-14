@@ -26,7 +26,7 @@ from .analytical_walking.walking_engine import WalkingEngine, WalkTarget
 from .config import (
     ACTUATOR_FORCE_RANGE, ACTUATOR_KP, ACTUATOR_KV, ARM_POSE, CONTACT_IMPRATIO,
     CONTACT_SOLIMP, CONTACT_SOLREF, JOINT_SIGNS, KEY_COMMANDS, PHYSICS,
-    SPAWN_CLEARANCE, TORSO_CTRL_PARAMS, USE_TORSO_CTRL, WALK_PARAMS,
+    RENDER_FPS, SPAWN_CLEARANCE, TORSO_CTRL_PARAMS, USE_TORSO_CTRL, WALK_PARAMS,
     joint_name,
 )
 from .control.torso_controller import SimulatedIMU, TorsoOrientationController
@@ -265,6 +265,19 @@ def _apply_key(engine: WalkingEngine, key: str) -> None:
     print(f"[CMD] {label}")
 
 
+def _log_status(sim: Simulation) -> None:
+    """Print the pose and IMU reading every 0.5 s of simulated time."""
+    if int(sim.time / 0.5) == int((sim.time - sim.dt) / 0.5):
+        return
+    px, py, pz = sim.body_pos
+    imu_str = ""
+    if sim.use_torso_ctrl:
+        r = sim.imu.read(sim.model, sim.data)
+        imu_str = f"  imu=({np.degrees(r['pitch']):.1f}°p, {np.degrees(r['roll']):.1f}°r)"
+    print(f"[t={sim.time:.1f}s] pos=({px:.3f},{py:.3f},{pz:.3f})  "
+          f"state={sim.engine.state.name}{imu_str}")
+
+
 def main() -> None:
     sim = Simulation()
 
@@ -284,31 +297,35 @@ def main() -> None:
         if keycode in _GLFW_KEYS:
             pressed.append(_GLFW_KEYS[keycode])
 
-    real_start = time.perf_counter()
+    frame_dt = 1.0 / RENDER_FPS
+    max_catchup = int(0.1 / sim.dt)   # never simulate more than 0.1 s per frame
     with mujoco.viewer.launch_passive(sim.model, sim.data, key_callback=key_callback) as viewer:
         viewer.cam.lookat[:] = [0.0, 0.0, 0.2]
+        real_start = time.perf_counter()
+        next_frame = real_start
 
         while viewer.is_running():
             while pressed:
                 _apply_key(sim.engine, pressed.popleft())
 
+            # Run the steps needed to catch up with wall-clock time, then render once
+            target = time.perf_counter() - real_start
+            steps = 0
             with viewer.lock():
-                sim.step()
+                while sim.time < target and steps < max_catchup:
+                    sim.step()
+                    steps += 1
+                    _log_status(sim)
+            if sim.time < target:
+                real_start += target - sim.time   # too slow: drop the backlog
             viewer.sync()
 
-            if int(sim.time / 0.5) != int((sim.time - sim.dt) / 0.5):
-                px, py, pz = sim.body_pos
-                imu_str = ""
-                if sim.use_torso_ctrl:
-                    r = sim.imu.read(sim.model, sim.data)
-                    imu_str = f"  imu=({np.degrees(r['pitch']):.1f}°p, {np.degrees(r['roll']):.1f}°r)"
-                print(f"[t={sim.time:.1f}s] pos=({px:.3f},{py:.3f},{pz:.3f})  "
-                      f"state={sim.engine.state.name}{imu_str}")
-
-            # Keep the simulation in sync with wall-clock time
-            sleep_time = sim.time - (time.perf_counter() - real_start)
+            next_frame += frame_dt
+            sleep_time = next_frame - time.perf_counter()
             if sleep_time > 0:
                 time.sleep(sleep_time)
+            else:
+                next_frame = time.perf_counter()
 
     failures = sum(sim.ik_failures.values())
     if failures:
