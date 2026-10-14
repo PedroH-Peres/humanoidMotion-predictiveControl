@@ -25,11 +25,12 @@ import numpy as np
 from .analytical_walking.walking_engine import WalkingEngine, WalkTarget
 from .config import (
     ACTUATOR_FORCE_RANGE, ACTUATOR_KP, ACTUATOR_KV, ARM_POSE, CONTACT_IMPRATIO,
-    CONTACT_SOLIMP, CONTACT_SOLREF, JOINT_SIGNS, KEY_COMMANDS, PHYSICS,
+    CONTACT_SOLIMP, CONTACT_SOLREF, FIELD_SIZE, JOINT_SIGNS, KEY_COMMANDS, PHYSICS,
     RENDER_FPS, SPAWN_CLEARANCE, TORSO_CTRL_PARAMS, USE_TORSO_CTRL, WALK_PARAMS,
     joint_name,
 )
 from .control.torso_controller import SimulatedIMU, TorsoOrientationController
+from .field import add_field
 from .kinematics.ik_solver import IKSolver
 
 # Order of the angles returned by IKSolver.solve
@@ -48,7 +49,7 @@ def _yaw_to_quat(yaw: float) -> np.ndarray:
 
 
 def build_model() -> mujoco.MjModel:
-    """Load the OP3 MJCF, add a floor and tune solver, contacts and actuators."""
+    """Load the OP3 MJCF, add a floor (and the soccer field) and tune solver, contacts and actuators."""
     from robot_descriptions import op3_mj_description
 
     spec = mujoco.MjSpec.from_file(op3_mj_description.MJCF_PATH)
@@ -83,6 +84,10 @@ def build_model() -> mujoco.MjModel:
             geom.conaffinity = 0
             geom.solref = solref
             geom.solimp = solimp
+
+    # Added after the loop above so the goals keep their collision with the robot
+    if FIELD_SIZE:
+        add_field(spec, FIELD_SIZE)
 
     model = spec.compile()
 

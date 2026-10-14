@@ -68,6 +68,8 @@ Tudo em [`mujoco_sim/config.py`](mujoco_sim/config.py):
 
 | Parâmetro | Efeito |
 |-----------|--------|
+| `FIELD_SIZE` | Campo da RoboCup Humanoid League: `"kid"` (9 × 6 m) ou `"adult"` (14 × 9 m); `None` para chão liso sem campo e gols |
+| `RENDER_FPS` | Taxa de atualização do viewer; vários passos de física rodam por quadro |
 | `PHYSICS` | `True`: `mj_step` com física real. `False`: só cinemática (útil para depurar o gerador e o IK) |
 | `USE_TORSO_CTRL`, `TORSO_CTRL_PARAMS` | Liga e ajusta o controlador PD que corrige o quadril a partir da inclinação do torso (IMU simulada) |
 | `WALK_PARAMS` | Período do passo `T`, altura do torso `z_com`, altura do pé `z_step`, fração de apoio duplo `ds_ratio`, separação dos pés `y_sep` |
@@ -80,6 +82,7 @@ Tudo em [`mujoco_sim/config.py`](mujoco_sim/config.py):
 mujoco_sim/
 ├── sim.py                        # modelo MuJoCo, laço de simulação, teclado
 ├── config.py                     # todos os parâmetros
+├── field.py                      # campo e gols da RoboCup (dimensões oficiais)
 ├── analytical_walking/
 │   ├── trajectory_generator.py   # LIPM em forma fechada, pé em balanço, planejamento de passos
 │   └── walking_engine.py         # máquina de estados da caminhada
@@ -108,6 +111,7 @@ Os testes conferem propriedades da trajetória (continuidade, pé nunca abaixo d
 ## Créditos
 
 - O gerador de trajetória analítico é um port em Python do `trajectory_generator.cpp` do pacote ROS2 **aurea_walk**, com duas correções no perfil de pouso do pé (veja os comentários no código).
+- O campo e os gols (`mujoco_sim/field.py`) são um port do `RobocupSoccerField.proto` e do `RobocupGoal.proto` do [Webots](https://github.com/cyberbotics/webots/tree/R2025a/projects/samples/contests/robocup/protos) (R2025a, Apache License 2.0). As linhas são caixas planas em vez da malha de triângulos do original, e a física do gramado (`turfPhysics`) não foi reproduzida.
 - Modelo do OP3: [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie/tree/main/robotis_op3), via [robot_descriptions](https://github.com/robot-descriptions/robot_descriptions.py).
 
 ## Licença

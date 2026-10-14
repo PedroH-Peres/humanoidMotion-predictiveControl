@@ -17,6 +17,14 @@ PHYSICS = True
 SPAWN_CLEARANCE = 0.01
 
 # -----------------------------------------------------------------------------
+#  SOCCER FIELD (RoboCup Humanoid League, see field.py)
+#  "kid"   → 9 x 6 m field        "adult" → 14 x 9 m field
+#  None    → plain floor, no field or goals
+# -----------------------------------------------------------------------------
+
+FIELD_SIZE = "kid"
+
+# -----------------------------------------------------------------------------
 #  VIEWER
 #  RENDER_FPS — how often the viewer is synced [Hz]. Each viewer.sync() is far
 #  costlier than a physics step, so several steps run per rendered frame.
