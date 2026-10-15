@@ -65,3 +65,20 @@ def test_robot_walks_without_falling(command):
     assert sum(sim.ik_failures.values()) == 0
     moved = np.linalg.norm(sim.body_pos[:2] - start[:2]) + abs(sim.body_yaw)
     assert moved > 0.1
+
+
+@pytest.mark.slow
+def test_robot_walks_with_the_mpc_engine():
+    """Full physics: the MPC CoM drives the same IK and the robot stays upright and advances."""
+    from mujoco_sim.config import WALK_PARAMS
+    from mujoco_sim.mpc_walking.mpc_walking_engine import MPCWalkingEngine
+
+    sim = Simulation()
+    sim.engine = MPCWalkingEngine(**WALK_PARAMS)
+    sim.engine.set_command(vx=0.05)
+    for _ in range(int(8 / sim.dt)):
+        sim.step()
+
+    assert sim.body_pos[2] > 0.2
+    assert sim.body_pos[0] > 0.2
+    assert sum(sim.ik_failures.values()) == 0
