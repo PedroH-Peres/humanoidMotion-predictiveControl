@@ -191,3 +191,140 @@ def roda_ciclos(s0, jerks, z_com, dt_sim=0.008, dt_mpc=0.04):
             fins.append(s.copy())
     return np.array(fins), np.array(zmps)
 
+def prepara_mpc(delta, N, z_com, wz, wj):
+    A, B, C = lipm_matrices(delta, z_com)
+    Ps, Pu = prediction_matrices(A, B, C, N)
+    H_P, M = qp_em_P(Pu, wz, wj)
+    return dict(A=A, B=B, C=C, Ps=Ps, Pu=Pu, H_P=H_P, M=M, wz=wz, wj=wj)
+
+
+def ciclo_mpc(s, p_ref, p_min, p_max, mpc):
+    # s: estado de UM eixo [x, v, a];  p_ref, p_min, p_max: vetores de tamanho N
+    livre = mpc["Ps"] @ s
+    q = -mpc["wz"] * p_ref - mpc["wj"] * mpc["M"] @ livre 
+    P = solve_box_qp(mpc["H_P"], q, p_min, p_max) 
+    u0 = (P[0] - livre[0]) / mpc["Pu"][0, 0]
+    return u0, P
+
+from mujoco_sim.mpc_walking.mpc_walking_engine import MPCParams
+
+
+def captura_ciclo(engine, ticks):
+    """Anda `ticks` ticks no engine do repositório e guarda o ÚLTIMO ciclo de MPC que ele resolveu."""
+    cap = {}
+    original = engine._solve
+    def embrulhado():
+        cap["s"] = engine._state.copy()                 # estado ANTES de resolver
+        cap["ref"] = engine._horizon_references()       # p_ref, p_min, p_max
+        original()
+        cap["jerk"] = engine._jerk.copy()
+        cap["P"] = engine.debug["zmp_plan"].copy()
+    engine._solve = embrulhado
+    for _ in range(ticks):
+        engine.step(0.008)
+    return cap
+
+import time
+from mujoco_sim.analytical_walking.walking_engine import WalkingEngine, WalkTarget
+from mujoco_sim.analytical_walking.trajectory_generator import get_com_pose_at_time, get_swing_foot_pose_at_time
+
+
+class MeuMPCEngine(WalkingEngine):
+    def __init__(self, T=0.5, z_com=0.22, z_step=0.04, ds_ratio=0.13, y_sep=0.054, g=9.81,
+                 delta=0.04, N=20, wz=1.0, wj=1e-6):
+        super().__init__(T, z_com, z_step, ds_ratio, y_sep, g)
+        self.delta, self.N = delta, N
+        self.mpc = prepara_mpc(delta, N, z_com, wz, wj)
+        self._reseta()
+
+    def _reseta(self):
+        """Volta ao repouso sob o torso; o próximo tick andando recomeça o MPC."""
+        self.estado = np.array([[self.torso.position[0], 0.0, 0.0],
+                            [self.torso.position[1], 0.0, 0.0]])
+        self.jerk = np.zeros(2)
+        self.tick = 0
+
+    def _estado_inicial(self):
+        # posição e velocidade do CoM no instante 0 do passo, vindas do gerador analítico
+        h = 1e-4
+        args = (self.T, self.ds_ratio, self.z_com, self.g,
+                self.torso_start, self.torso_target, self.support_foot)
+        pos, _ = get_com_pose_at_time(0.0, *args)
+        a_frente, _ = get_com_pose_at_time(h, *args)
+        vel = (a_frente - pos) / h     
+        return np.column_stack([pos, vel, np.zeros(2)])    # aceleração zero: o ZMP começa sobre o CoM
+
+    def _avanca_mpc(self, dt):
+        n = ticks_por_ciclo(self.delta, dt)
+        if self.tick == 0:
+            self.estado = self._estado_inicial()
+        if self.tick % n == 0:
+            p_ref, p_min, p_max, _ = referencias(self, self.N, self.delta)  
+            for ax in (0, 1):
+                self.jerk[ax], _ = ciclo_mpc(self.estado[ax], p_ref[:, ax], p_min[:, ax], p_max[:, ax], self.mpc)
+        self.tick += 1
+        A, B, _ = lipm_matrices(dt, self.z_com)                              
+        for ax in (0, 1):
+            self.estado[ax] = A @ self.estado[ax] + B * self.jerk[ax]
+        return self.estado[:, 0].copy()   # a posição (x, y) do CoM
+
+    def step(self, dt):                   # <- já vem pronto
+        self._update_state()
+        if self.state == WalkState.IDLE:
+            self._reseta()
+            return self.standing_pose()
+
+        com_2d = self._avanca_mpc(dt)
+        self.t_step += dt
+
+        _, com_yaw = get_com_pose_at_time(self.t_step, self.T, self.ds_ratio, self.z_com, self.g,
+                                          self.torso_start, self.torso_target, self.support_foot)
+        swing_3d, swing_yaw = get_swing_foot_pose_at_time(self.t_step, self.T, self.z_step, self.ds_ratio,
+                                                          self.swing_start, self.swing_target)
+        body_pos = np.array([com_2d[0], com_2d[1], self.z_com])
+        sup_pos = np.array([*self.support_foot.position, 0.0])
+        if self.swing_foot.is_left:
+            left_pos, left_yaw = swing_3d, swing_yaw
+            right_pos, right_yaw = sup_pos, self.support_foot.yaw
+        else:
+            right_pos, right_yaw = swing_3d, swing_yaw
+            left_pos, left_yaw = sup_pos, self.support_foot.yaw
+        if self.t_step >= self.T:
+            self._end_step()
+        return WalkTarget(body_pos, com_yaw, left_pos, left_yaw, right_pos, right_yaw)
+
+def compara(nome, comandos, segundos):
+    """Roda o seu engine e o do repositório com os mesmos comandos e compara tick a tick."""
+    meu, ref = MeuMPCEngine(**WALK_PARAMS), MPCWalkingEngine(**WALK_PARAMS)
+    pendentes = sorted(comandos, key=lambda c: c[0])
+    dif = {"body": 0.0, "pés": 0.0, "yaw": 0.0}; t_meu = []; anterior = None; salto = 0.0; desvio = 0.0
+    for i in range(int(segundos / 0.008)):
+        while pendentes and pendentes[0][0] <= i * 0.008:
+            kw = pendentes.pop(0)[1]
+            meu.set_command(**kw); ref.set_command(**kw)
+        t0 = time.perf_counter(); a = meu.step(0.008); t_meu.append(time.perf_counter() - t0); b = ref.step(0.008)
+        dif["body"] = max(dif["body"], np.abs(a.body_pos - b.body_pos).max())
+        dif["pés"] = max(dif["pés"], np.abs(a.left_sole - b.left_sole).max(), np.abs(a.right_sole - b.right_sole).max())
+        dif["yaw"] = max(dif["yaw"], abs(a.body_yaw - b.body_yaw))
+        if anterior is not None: salto = max(salto, np.linalg.norm(a.body_pos[:2] - anterior))
+        anterior = a.body_pos[:2].copy()
+        if meu.state != WalkState.IDLE: desvio = max(desvio, np.abs(meu.estado[:, 0] - meu.torso.position).max())
+    t = np.array(t_meu) * 1e3
+    print(f"  {nome:28s} dif corpo {dif['body']:.0e} | pés {dif['pés']:.0e} | yaw {dif['yaw']:.0e} | maior salto da pelve {salto*1000:.1f} mm | |CoM-torso| máx {desvio*100:.1f} cm | tempo/tick média {t.mean():.2f} ms, máx {t.max():.1f} ms")
+
+
+print("\n== Teste 7c: o seu engine == o engine do repositório")
+compara("frente 0.05 por 8 s", [(0.0, dict(vx=0.05))], 8)
+compara("lateral 0.03 por 8 s", [(0.0, dict(vy=0.03))], 8)
+compara("giro 0.5 por 8 s", [(0.0, dict(wz=0.5))], 8)
+compara("mudanças de comando, 16 s", [(0.0, dict(vx=0.05)), (4.0, dict(vy=0.03)), (8.0, dict(wz=0.5)), (12.0, dict(vx=-0.05))], 16)
+
+print("\n== Teste 7c-2: o robô no MuJoCo (física completa) andando com o SEU engine")
+from mujoco_sim.sim import Simulation
+for nome, cmd in (("frente 0.05", dict(vx=0.05)), ("lateral 0.03", dict(vy=0.03)), ("giro 0.5", dict(wz=0.5))):
+    sim = Simulation(); sim.engine = MeuMPCEngine(**WALK_PARAMS); sim.engine.set_command(**cmd)
+    inclinacao = 0.0
+    for _ in range(int(8 / sim.dt)):
+        sim.step()
+        r = sim.imu.read(sim.model, sim.data); inclinacao = max(inclinacao, abs(r["pitch"]), abs(r["roll"]))
+    print(f"  {nome:13s} em 8 s: x={sim.body_pos[0]:+.3f} m  y={sim.body_pos[1]:+.3f} m  yaw={np.degrees(sim.body_yaw):+7.1f} graus | altura {sim.body_pos[2]:.3f} m | inclinação máx {np.degrees(inclinacao):.1f} graus | falhas de IK {sum(sim.ik_failures.values())}")
